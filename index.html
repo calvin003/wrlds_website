@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>WRLD — Promptable World Generator</title>
+<link rel="stylesheet" href="./src/style.css" />
+</head>
+<body>
+<canvas id="view"></canvas>
+
+<!-- Top-left: prompt bar -->
+<div id="promptbar" class="panel">
+  <div class="row">
+    <input id="prompt" type="text" spellcheck="false"
+      placeholder="e.g. 'low-altitude drone over an icy tundra at dawn, heavy snow, -25C'"
+      value="sahara dune sea under a haboob sandstorm, 45C, wind 18 m/s" />
+    <button id="generate">Generate</button>
+  </div>
+  <div class="row subtle">
+    <span id="prompt-echo"></span>
+  </div>
+  <div class="row chips" id="presets">
+    <button class="chip" data-p="narrow canyon in iceland, river at the bottom, moss on rocks, golden hour">Canyon, golden hour</button>
+    <button class="chip" data-p="sahara dune sea under a haboob sandstorm, 45C, wind 18 m/s">Sahara sandstorm</button>
+    <button class="chip" data-p="arctic tundra blizzard, -35C, wind 20 m/s, heavy snow, night">Arctic blizzard, night</button>
+    <button class="chip" data-p="dense pine forest after snowfall, calm, -5C, noon">Snowy forest, calm</button>
+    <button class="chip" data-p="alpine mountain ridge at dusk, light snow, -12C, wind 8 m/s">Alpine dusk</button>
+    <button class="chip" data-p="urban rooftops at night, cold rain, 4C, wind 10 m/s">Urban rooftops, night</button>
+  </div>
+</div>
+
+<!-- Right: unified training HUD -->
+<div id="hud" class="panel">
+  <div class="hud-header">
+    <span class="hud-title" style="margin:0">INTERCEPT TRAINING</span>
+    <button id="hud-expand" class="expand-btn" title="Show details">+</button>
+  </div>
+  <div class="genbar"><div id="sw-genprog"></div></div>
+  <div class="grid compact">
+    <div><span class="label">GEN</span><span id="sw-gen">1</span></div>
+    <div><span class="label">SKILL</span><span id="sw-xskill">0%</span></div>
+    <div><span class="label">HOSTILES</span><span id="sw-ealive">25</span></div>
+    <div><span class="label">INTERCEPTS</span><span id="sw-wp">0</span></div>
+  </div>
+  <div id="warnings"></div>
+  <canvas id="reward-plot" width="240" height="60" style="margin-top:6px; width:100%; background:rgba(0,0,0,0.35); border-radius:4px;"></canvas>
+
+  <!-- Expandable details -->
+  <div id="hud-details" class="hud-details hidden">
+    <div class="hud-title">SWARM</div>
+    <div class="grid">
+      <div><span class="label">FLEET</span><span id="sw-total">80</span></div>
+      <div><span class="label">MEAN SK</span><span id="sw-mskill">0%</span></div>
+      <div><span class="label">MEAN R</span><span id="sw-mreward">0.0</span></div>
+      <div><span class="label">BEST R</span><span id="sw-breward">—</span></div>
+      <div><span class="label">INT/GEN</span><span id="sw-wpgen">0</span></div>
+      <div><span class="label">RESEEDS</span><span id="sw-reseeds">0</span></div>
+      <div><span class="label">ENEMIES</span><span id="sw-enemies">25</span></div>
+    </div>
+    <div class="hud-title">ELECTRONICS</div>
+    <div class="grid">
+      <div><span class="label">AMB T</span><span id="tel-ambient">0 °C</span></div>
+      <div><span class="label">BATT</span><span id="tel-batt">100%</span></div>
+      <div><span class="label">MOTOR T</span><span id="tel-motor">25 °C</span></div>
+      <div><span class="label">MIN BATT</span><span id="tel-minbatt">100%</span></div>
+    </div>
+    <div class="hud-title">WEATHER</div>
+    <div class="grid">
+      <div><span class="label">WIND</span><span id="tel-wind">0 m/s</span></div>
+      <div><span class="label">GUST</span><span id="tel-gust">0 m/s</span></div>
+      <div><span class="label">VIS</span><span id="tel-vis">10 km</span></div>
+      <div><span class="label">PRCP</span><span id="tel-prcp">none</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- Bottom-left: controls -->
+<div id="controls" class="panel">
+  <div class="row subtle">
+    <span>Free cam: <kbd>WASD</kbd> move · <kbd>Space</kbd>/<kbd>C</kbd> up·down · <kbd>Shift</kbd> sprint · click to look</span>
+  </div>
+  <div class="row">
+    <label><span>Ambient °C</span><input id="ambient" type="range" min="-45" max="50" step="1" value="-15"><span id="ambient-val">-15</span></label>
+  </div>
+  <div class="row">
+    <label><span>Wind m/s</span><input id="wind" type="range" min="0" max="25" step="0.5" value="8"><span id="wind-val">8.0</span></label>
+  </div>
+  <div class="row">
+    <label><span>Snow</span><input id="snow" type="range" min="0" max="1" step="0.01" value="0.7"><span id="snow-val">0.70</span></label>
+  </div>
+  <div class="row">
+    <label><span>Sand</span><input id="sand" type="range" min="0" max="1" step="0.01" value="0"><span id="sand-val">0.00</span></label>
+  </div>
+  <div class="row">
+    <label><span>Sun</span><input id="sun" type="range" min="0" max="1" step="0.01" value="0.15"><span id="sun-val">dawn</span></label>
+  </div>
+  <div class="row buttons">
+    <button id="reset">Reset swarm</button>
+    <button id="pause">Pause</button>
+    <button id="evolveNow">Force evolve</button>
+    <button id="camToggle">Cam: follow</button>
+  </div>
+</div>
+
+
+<!-- Loading splash -->
+<div id="splash">
+  <div class="splash-inner">
+    <div class="splash-title">WRLD</div>
+    <div class="splash-sub">Adversarial drone swarm training · Promptable world simulator</div>
+    <div class="splash-bar"><div id="splash-fill"></div></div>
+    <div class="splash-status" id="splash-status">booting…</div>
+    <div id="splash-error" style="display:none; max-width:520px; margin:14px auto 0; color:#ff8c8c; font-family:ui-monospace,Menlo,monospace; font-size:11px; text-align:left; background:rgba(80,0,0,0.25); border:1px solid rgba(255,90,90,0.4); padding:10px 12px; border-radius:6px; white-space:pre-wrap;"></div>
+    <div id="splash-hint" style="display:none; max-width:520px; margin:10px auto 0; color:#8596ab; font-family:ui-monospace,Menlo,monospace; font-size:11px; text-align:left; line-height:1.6;">
+      <strong style="color:#dbe6f2;">If you opened this file by double-clicking,</strong> Chrome and Safari block ES&nbsp;modules over <code>file://</code>.
+      Run a local server in this folder and visit <code>http://localhost:8000</code>:
+      <pre style="background:rgba(0,0,0,0.3); padding:6px 8px; border-radius:4px; margin:6px 0;">python3 -m http.server 8000
+# or:  npx --yes serve .</pre>
+    </div>
+  </div>
+</div>
+
+<!-- Catch any module load failure and show it on the splash, so we never get
+     stuck on "booting…" silently. -->
+<script>
+(function () {
+  function showErr(msg) {
+    var box = document.getElementById('splash-error');
+    var hint = document.getElementById('splash-hint');
+    var status = document.getElementById('splash-status');
+    if (box) { box.style.display = 'block'; box.textContent = String(msg); }
+    if (hint) hint.style.display = 'block';
+    if (status) status.textContent = 'failed to load';
+  }
+  window.addEventListener('error', function (e) {
+    if (e && (e.message || e.error)) showErr((e.message || '') + '\n' + (e.filename || '') + ':' + (e.lineno || ''));
+  });
+  window.addEventListener('unhandledrejection', function (e) {
+    showErr('Unhandled promise rejection: ' + (e.reason && (e.reason.stack || e.reason.message || e.reason) || e));
+  });
+  // If main.js never reports progress within 10 s, surface a help message.
+  setTimeout(function () {
+    var fill = document.getElementById('splash-fill');
+    if (!fill || fill.style.width === '' || fill.style.width === '0%') {
+      showErr('Module did not start within 10 s. Most common cause: opened via file://, or the CDN is blocked. See hint below.');
+    }
+  }, 10000);
+  // file:// quick warning
+  if (location.protocol === 'file:') {
+    document.getElementById('splash-hint').style.display = 'block';
+  }
+})();
+</script>
+
+<!-- Three.js + simplex noise via importmap. Using esm.sh which serves
+     proper ESM regardless of the package's internal layout. -->
+<script type="importmap">
+{
+  "imports": {
+    "three":          "https://esm.sh/three@0.160.0",
+    "three/addons/":  "https://esm.sh/three@0.160.0/examples/jsm/",
+    "simplex-noise":  "https://esm.sh/simplex-noise@4.0.3"
+  }
+}
+</script>
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
