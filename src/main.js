@@ -48,7 +48,7 @@ let course = null;
 
 const state = {
   cfg: null,
-  cam: 'orbit',                   // free | follow | orbit
+  cam: 'orbit',                    // free | follow | orbit
   paused: false,
   keys: new Set(),
   mouse: { dx: 0, dy: 0, locked: false },
