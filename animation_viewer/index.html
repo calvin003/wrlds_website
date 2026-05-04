@@ -49,7 +49,7 @@
       pointer-events: none;
     }
     .beat.center { justify-content: center; }
-    .beat.center .text { text-align: center; }
+    .beat.center .text { text-align: left; }
     .beat .text {
       max-width: 520px;
       opacity: 0; transform: translateY(20px);
@@ -305,8 +305,7 @@
       renderer.setSize(window.innerWidth, window.innerHeight, false);
     });
     window.addEventListener("load", () => {
-      const max = document.body.scrollHeight - window.innerHeight;
-      window.scrollTo({ top: max, behavior: "instant" });
+      window.scrollTo({ top: 0, behavior: "instant" });
     });
 
     // Torpedo animation window: hidden in beat 0, flies in during the
