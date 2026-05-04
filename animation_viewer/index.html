@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>WRLD · Scroll Story</title>
+  <style>
+    :root { --ink: #d8e1e6; --accent: #6fc3d6; }
+    html, body { margin: 0; background: #000; color: var(--ink);
+                 font: 14px/1.5 system-ui, -apple-system, "SF Pro Text", sans-serif;
+                 -webkit-font-smoothing: antialiased; }
+    body { height: 600vh; }                    /* 5 beats × ~1 viewport each */
+
+    /* The 3D scene is fixed behind everything */
+    #stage { position: fixed; inset: 0; z-index: 0; }
+    #canvas { display: block; width: 100vw; height: 100vh; }
+
+    /* HUD */
+    /* Everything HUD / textual is hidden on the first viewport.
+       It fades in once the user starts scrolling. */
+    #brand {
+      position: fixed; top: 14px; left: 14px; z-index: 10;
+      font-weight: 600; letter-spacing: 0.18em; font-size: 11px;
+      color: var(--accent); text-transform: uppercase;
+      opacity: 0; transition: opacity 0.5s ease;
+    }
+    #progress {
+      position: fixed; top: 0; left: 0; height: 2px; width: 0;
+      background: var(--accent); z-index: 10;
+      transition: width 0.05s linear, opacity 0.5s ease;
+      opacity: 0;
+    }
+    #scroll-hint {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+      z-index: 10; font-size: 11px; letter-spacing: 0.2em;
+      text-transform: uppercase; color: rgba(255,255,255,0.45);
+      pointer-events: none; opacity: 0;
+    }
+    body.scrolled #brand,
+    body.scrolled #progress { opacity: 1; }
+    @keyframes bob { 0%,100% { transform: translateX(-50%) translateY(0); }
+                     50%   { transform: translateX(-50%) translateY(6px); } }
+
+    /* Story panels */
+    .beat {
+      position: relative; z-index: 5;
+      height: 100vh; padding: 0 8vw;
+      display: flex; align-items: center;
+      pointer-events: none;
+    }
+    .beat .text {
+      max-width: 480px;
+      opacity: 0; transform: translateY(20px);
+      transition: opacity 0.6s ease, transform 0.8s ease;
+      will-change: opacity, transform;
+    }
+    .beat.live .text { opacity: 1; transform: translateY(0); }
+    .beat .eyebrow {
+      font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase;
+      color: var(--accent); margin-bottom: 14px;
+    }
+    .beat h2 {
+      font: 600 38px/1.15 ui-serif, "New York", Georgia, serif;
+      margin: 0 0 14px 0; color: #ffffff;
+    }
+    .beat p { margin: 0; color: rgba(216,225,230,0.78); font-size: 16px; }
+    .beat.right { justify-content: flex-end; }
+    #loading {
+      position: fixed; inset: 0; z-index: 20;
+      display: flex; align-items: center; justify-content: center;
+      background: #000; font-size: 18px; letter-spacing: 0.04em;
+    }
+    #loading.done { display: none; }
+  </style>
+</head>
+<body>
+  <div id="stage"><canvas id="canvas"></canvas></div>
+  <div id="brand">WRLD</div>
+  <div id="progress"></div>
+
+  <!-- Beat 0 is intentionally empty: pure scene, no text on landing -->
+  <div class="beat" data-beat="0"></div>
+  <div class="beat right" data-beat="1">
+    <div class="text">
+      <div class="eyebrow">Closer</div>
+      <h2>The future of undersea warfare</h2>
+      <p>Cheap & autonomous swarm warfare isn't limited to drone warfare, its coming undersea</p>
+    </div>
+  </div>
+  <div class="beat" data-beat="2">
+    <div class="text">
+      <div class="eyebrow">Identify</div>
+      <h2>We're Repeat our Mistakes: Asymetric Warfare</h2>
+      <p>The glaring problem in drone warfare is economics. We are using $2M missiles to defend against $20k drones. <br><br>The situation undersea is worst. <br><br>Submarines are $10 billion dollar investments that can be wiped out by $75k autonomous torpedos</p>
+    </div>
+  </div>
+  <div class="beat right" data-beat="3">
+    <div class="text">
+      <div class="eyebrow">Context</div>
+      <h2>WRLDs is the solution</h2>
+      <p>Your weedwacker undersea. WRLDs is an autonomous & agile interceptor torpedo </p>
+    </div>
+  </div>
+  <div class="beat" data-beat="4">
+    <div class="text">
+      <div class="eyebrow">Ascend</div>
+      <h2>The Future</h2>
+      <p>Vision: <br> We are the next arm of undersea defense <br>
+      <br><br>Mission:<br>We will build attack, intelligience, and defense fleet of autonomous undersea defense.</p>
+    </div>
+  </div>
+
+  <div id="loading">Loading scene…</div>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+      "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+    }
+  }
+  </script>
+
+  <script type="module">
+    import * as THREE from "three";
+    import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+
+    // ------------------------------------------------------------------
+    // Camera keyframes. Defined in BLENDER coordinates (Z-up); we convert
+    // to Three.js (Y-up) at runtime.  Each entry: { pos, target, fov }.
+    // pos[0] is the establishing shot you set in Blender's viewport.
+    // ------------------------------------------------------------------
+    const KEYS = [
+      // 0  establishing — captured from your Blender viewport exactly
+      { pos: [394.37, -546.10, 134.9], target: [360.42,  -453.90,  118.91], fov: 27 },
+      // 1  approach
+      { pos: [240.00,  -30.00,  70.00], target: [80.00,  60.00,  4.00], fov: 30 },
+      // 2  hull contact (close)
+      { pos: [160.00,   60.00,  35.00], target: [80.00,  90.00,  2.00], fov: 36 },
+      // 3  context pull-back
+      { pos: [120.00, -260.00, 240.00], target: [80.00, 120.00,  0.00], fov: 26 },
+      // 4  ascent / wide
+      { pos: [-1000.0, -1300.00, 520.00], target: [59.28,  35.98, 10.26], fov: 27 },
+    ];
+
+    const blenderToThree = (v) =>
+      new THREE.Vector3(v[0], v[2], -v[1]);
+
+    // ------------------------------------------------------------------
+    // Renderer + scene
+    // ------------------------------------------------------------------
+    const canvas   = document.getElementById("canvas");
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight, false);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.toneMappingExposure = 1.0;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000000);
+
+    const camera = new THREE.PerspectiveCamera(
+      KEYS[0].fov, window.innerWidth / window.innerHeight, 0.1, 6000,
+    );
+    camera.position.copy(blenderToThree(KEYS[0].pos));
+    camera.lookAt(blenderToThree(KEYS[0].target));
+
+    // ------------------------------------------------------------------
+    // Load scene
+    // ------------------------------------------------------------------
+    // ------------------------------------------------------------------
+    // Torpedo swarm: 1 lead (your placed Top_Capsule) + 6 followers.
+    // All clones share Top_Capsule's geometry/material — cheap.
+    // ------------------------------------------------------------------
+    const TORPEDO_BASE_END   = [125.41,  69.60, 49.90];   // your Blender placement
+    const TORPEDO_BASE_START = [ 41.00, 252.00, 50.00];   // 200 m NNW along its bow
+    const SWARM_SIZE = 7;                                 // 1 lead + 6 followers
+
+    // Cheap deterministic noise so the swarm looks the same every reload
+    function rnd(i, j) {
+      const x = Math.sin(i * 12.9898 + j * 78.233) * 43758.5453;
+      return x - Math.floor(x);
+    }
+    const swarm = [];
+    let topCapsule = null, _topStart = null, _topEnd = null;
+    for (let i = 0; i < SWARM_SIZE; i++) {
+      const isLead = i === 0;
+      // Followers spread out around the lead (start point dispersed wide,
+      // end point clustered tight as if forming up on the target)
+      const startOff = isLead ? [0,0,0] : [
+        (rnd(i, 0) - 0.5) * 140,
+        (rnd(i, 1) - 0.5) * 140,
+        (rnd(i, 2) - 0.5) *  70,
+      ];
+      const endOff = isLead ? [0,0,0] : [
+        (rnd(i, 3) - 0.5) * 22,
+        (rnd(i, 4) - 0.5) * 22,
+        (rnd(i, 5) - 0.5) * 14,
+      ];
+      const delay = isLead ? 0.0 : rnd(i, 6) * 0.18;      // staggered arrival
+      swarm.push({ startOff, endOff, delay, mesh: null,
+                   start: null, end: null });
+    }
+
+    new GLTFLoader().load(
+      "scene.glb",
+      (gltf) => {
+        let leadMesh = null;
+        gltf.scene.traverse((o) => {
+          if (o.isLight) o.intensity = o.intensity * 1e-4;
+          if (!leadMesh && o.name && /^Top_Capsule/i.test(o.name)) leadMesh = o;
+        });
+
+        if (leadMesh) {
+          // Wire up swarm[0] to the original mesh, clone the rest
+          for (let i = 0; i < SWARM_SIZE; i++) {
+            const s = swarm[i];
+            const mesh = i === 0 ? leadMesh : leadMesh.clone();
+            if (i !== 0) gltf.scene.add(mesh);
+            const start = blenderToThree([
+              TORPEDO_BASE_START[0] + s.startOff[0],
+              TORPEDO_BASE_START[1] + s.startOff[1],
+              TORPEDO_BASE_START[2] + s.startOff[2],
+            ]);
+            const end = blenderToThree([
+              TORPEDO_BASE_END[0] + s.endOff[0],
+              TORPEDO_BASE_END[1] + s.endOff[1],
+              TORPEDO_BASE_END[2] + s.endOff[2],
+            ]);
+            s.mesh  = mesh;
+            s.start = start;
+            s.end   = end;
+            mesh.visible = false;
+          }
+          // Set up lead torpedo references
+          topCapsule = leadMesh;
+          _topStart = blenderToThree(TORPEDO_BASE_START);
+          _topEnd = blenderToThree(TORPEDO_BASE_END);
+        }
+        scene.add(gltf.scene);
+        document.getElementById("loading").classList.add("done");
+      },
+      (xhr) => {
+        const pct = xhr.total ? Math.round(xhr.loaded / xhr.total * 100) : 0;
+        document.getElementById("loading").textContent = `Loading scene… ${pct}%`;
+      },
+      (err) => {
+        document.getElementById("loading").textContent = "Failed to load scene.glb — see console.";
+        console.error(err);
+      },
+    );
+
+    // ------------------------------------------------------------------
+    // Scroll-driven camera. We compute a global progress in [0, KEYS.len-1]
+    // and lerp position/target/fov along it with a smoothing pass.
+    // ------------------------------------------------------------------
+    const tmpPos    = new THREE.Vector3();
+    const tmpTarget = new THREE.Vector3();
+    let smoothPos    = blenderToThree(KEYS[0].pos);
+    let smoothTarget = blenderToThree(KEYS[0].target);
+    let smoothFov    = KEYS[0].fov;
+
+    function easeInOut(t) { return t * t * (3 - 2 * t); }       // smoothstep
+
+    function sampleCamera(progress) {
+      // progress is 0..1 across the whole story
+      const span = (KEYS.length - 1);
+      const f    = Math.max(0, Math.min(span, progress * span));
+      const i    = Math.min(span - 1, Math.floor(f));
+      const t    = easeInOut(f - i);
+      const a    = KEYS[i], b = KEYS[i + 1];
+      tmpPos   .copy(blenderToThree(a.pos)).lerp(blenderToThree(b.pos), t);
+      tmpTarget.copy(blenderToThree(a.target)).lerp(blenderToThree(b.target), t);
+      const fov = a.fov + (b.fov - a.fov) * t;
+      return { pos: tmpPos, target: tmpTarget, fov };
+    }
+
+    function updateBeats(progress) {
+      const span = KEYS.length - 1;
+      const idx  = Math.round(progress * span);
+      document.querySelectorAll(".beat").forEach((el) => {
+        const b = +el.dataset.beat;
+        el.classList.toggle("live", b === idx);
+      });
+    }
+
+    let scrollProgress = 0;
+    function onScroll() {
+      const max = document.body.scrollHeight - window.innerHeight;
+      scrollProgress = max > 0 ? window.scrollY / max : 0;
+      document.getElementById("progress").style.width = (scrollProgress * 100) + "%";
+      // Reveal HUD only once the user has actually scrolled
+      document.body.classList.toggle("scrolled", scrollProgress > 0.005);
+      updateBeats(scrollProgress);
+    }
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();   // initial
+
+    window.addEventListener("resize", () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight, false);
+    });
+
+    // Torpedo animation window: hidden in beat 0, flies in during the
+    // transition into beat 1 (scroll progress 0.02 → 0.25). Adjust these
+    // two numbers if you want the entry to start/end at a different scroll.
+    const TORPEDO_IN  = 0.02;
+    const TORPEDO_OUT = 0.25;
+
+    // Render loop with smoothing toward the sampled keyframe state
+    (function tick() {
+      const { pos, target, fov } = sampleCamera(scrollProgress);
+      smoothPos.lerp(pos, 0.12);
+      smoothTarget.lerp(target, 0.12);
+      smoothFov += (fov - smoothFov) * 0.12;
+      camera.position.copy(smoothPos);
+      camera.lookAt(smoothTarget);
+      if (Math.abs(camera.fov - smoothFov) > 0.01) {
+        camera.fov = smoothFov;
+        camera.updateProjectionMatrix();
+      }
+
+      // Torpedo swarm: invisible in beat 0, flies from start to placed end pose
+      const raw = (scrollProgress - TORPEDO_IN) / (TORPEDO_OUT - TORPEDO_IN);
+      if (raw <= 0) {
+        // All torpedoes hidden
+        swarm.forEach(s => { if (s.mesh) s.mesh.visible = false; });
+      } else {
+        // Animate each torpedo with its delay
+        swarm.forEach((s, i) => {
+          if (!s.mesh || !s.start || !s.end) return;
+          const delayedT = Math.max(0, raw - s.delay);
+          const t = Math.min(1, delayedT);
+          s.mesh.visible = t > 0;
+          if (t > 0) {
+            s.mesh.position.lerpVectors(s.start, s.end, easeInOut(t));
+            // Orient towards movement direction
+            const direction = new THREE.Vector3().subVectors(s.end, s.start).normalize();
+            s.mesh.lookAt(
+              s.mesh.position.x + direction.x,
+              s.mesh.position.y + direction.y,
+              s.mesh.position.z + direction.z
+            );
+          }
+        });
+      }
+
+      renderer.render(scene, camera);
+      requestAnimationFrame(tick);
+    })();
+  </script>
+</body>
+</html>
